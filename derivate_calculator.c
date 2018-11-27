@@ -2,14 +2,16 @@
 #include <string.h>
 #include <assert.h>
 #include <ctype.h>
+#include <stdlib.h>
 
-typedef struct tree tree;
 struct tree
 {
-  char *expr;
-  tree *l;
-  tree *r;
+  char expr[100];
+  struct tree *l; //left son
+  struct tree *r; //right son
+  struct tree *f; //father
 };
+typedef struct tree tree;
 
 //checks if a character is an operator and, if so, returns its precedence
 int operator(char c)
@@ -30,6 +32,7 @@ int function(char *c)
 {
   if( !strcmp(c,"ln") ) return 1;
   if( !strcmp(c,"log") ) return 1;
+  if( !strcmp(c,"lg") ) return 1;
   if( !strcmp(c,"sin") ) return 1;
   if( !strcmp(c,"cos") ) return 1;
   if( !strcmp(c,"tg") ) return 1;
@@ -55,13 +58,14 @@ void number(char *exp, char *res, int *i, int *j)
 {
   *(res + *j) = *(exp + *i);
   *i += 1; *j += 1;
-  while( isdigit(*(exp + *i)) )
+  while( isdigit(*(exp + *i)) || *(exp + *i) == '.' || *(exp + *i) == '-')
   {
     *(res + *j) = *(exp + *i);
     *i += 1; *j += 1;
   }
   *(res + *j) = ' ';
   *j += 1;
+  *(res + *j) = '\0';
 }
 
 //push a varaible (x) to the output queue
@@ -71,6 +75,7 @@ void variable(char *exp, char *res, int *i, int *j)
   *j += 1; *i += 1;
   *(res + *j) = ' ';
   *j += 1;
+  *(res + *j) = '\0';
 }
 
 //returns the last element in the stack
@@ -94,6 +99,7 @@ void symbol_push(char *exp, char *stack, int *i, int *poz)
   *poz += 1; *i += 1;
   *(stack + *poz) = ' ';
   *poz += 1;
+  *(stack + *poz) = '\0';
 }
 
 //
@@ -114,6 +120,7 @@ void operator_case(char *exp, char *res, char *stack, int *i, int *j, int *poz)
     *j += strlen(l);
     *(res + *j) = ' ';
     *j += 1;
+    *(res + *j) = '\0';
     *poz -= strlen(l) + 1;
     if(*poz != 0) last(stack, *poz, l);
   }
@@ -124,7 +131,7 @@ int is_function(char *exp, int i)
 {
   int k = 0;
   char l[50];
-  while( k < 50 && isalpha(*(exp + i)))
+  while( k < 50 && isalpha(*(exp + i)) )
   {
     l[k] = *(exp + i);
     i++; k++;
@@ -155,6 +162,7 @@ void function_case(char *exp, char *stack, int *i, int *poz)
   }
   *(stack + *poz) = ' ';
   *poz += 1;
+  *(stack + *poz) = '\0';
 }
 
 void value_case(char *exp, char *res, int *i, int *j)
@@ -166,6 +174,7 @@ void value_case(char *exp, char *res, int *i, int *j)
   }
   *(res + *j) = ' ';
   *j += 1;
+  *(res + *j) = '\0';
 }
 
 int rbracket_case(char *exp, char *res, char*stack, int *i, int *j, int *poz)
@@ -178,6 +187,7 @@ int rbracket_case(char *exp, char *res, char*stack, int *i, int *j, int *poz)
     *j += strlen(l);
     *(res + *j) = ' ';
     *j += 1;
+    *(res + *j) = '\0';
     *poz -= strlen(l) + 1;
     if(*poz == 0) return -1;
     last(stack, *poz, l);
@@ -196,11 +206,13 @@ int push_all(char *res, char*stack, int *j, int *poz)
     if(l[0] == '(' || l[0] == ')') return -1;
     strcat(res,l);
     *j += strlen(l);
+    *(res + *j) = '\0';
     *(res + *j) = ' ';
     *j += 1;
+    *(res + *j) = '\0';
     *poz -= strlen(l) + 1;
   }
-  *(res + *j) = '\0';
+  *(res + *j - 1) = '\0';
   return 0;
 }
 
@@ -211,7 +223,7 @@ int rpn_convertor(char *exp, char *res)
   char stack[1000]; stack[0] = '\0';
   while(*(exp + i) != '\0')
   {
-    if( isdigit(*(exp + i)) )
+    if( isdigit(*(exp + i)) || (*(exp + i) == '-' && isdigit(*(exp + i + 1))) )
         number(exp, res, &i, &j);
     else if( *(exp + i) == 'x' )
         variable(exp, res, &i, &j);
@@ -233,29 +245,313 @@ int rpn_convertor(char *exp, char *res)
   return push_all(res, stack, &j, &poz);
 }
 
+//puts in l the element before the specified position
+void get_elem(char *exp, int poz, char *l)
+{
+  int k = poz - 1, i = 0;
+  while( exp[k - 1] != ' ' && k != 0)
+    k--;
+  while( k <= poz - 1 )
+    {
+      l[i] = exp[k];
+      i++; k++;
+    }
+  l[i] = '\0';
+}
+
+//taxes in a string in rpn notation and transforms it into a tree
+//poz points at the end of the last element + 1
+tree *tree_parser(char *exp, int *poz, tree *f)
+{
+  tree *t = malloc(sizeof(tree));
+  t->f = f;
+  get_elem(exp, *poz, t->expr);
+  *poz -= strlen(t->expr) + 1;
+  if( isdigit(t->expr[0]) || t->expr[0] == 'x' || is_value(t->expr, 0)
+      || (t->expr[0] == '-' && isdigit(t->expr[1])) )
+    {
+      t->l = NULL;
+      t->r = NULL;
+    }
+  else if(operator(t->expr[0]))
+  {
+    t->l = tree_parser(exp, poz, t);
+    t->r = tree_parser(exp, poz, t);
+  }
+  else if(function(t->expr))
+  {
+    t->l = tree_parser(exp, poz, t);
+    if( !strcmp(t->expr,"log") ) t->r = tree_parser(exp, poz, t);
+    else t->r = NULL;
+  }
+  return t;
+}
+
+void *tree_to_infix(char *, int *, tree *);
+
+//checks if conditions are met for puting brackets
+int condition_for_brackets(tree *t, tree *son)
+{
+  return !isdigit(son->expr[1]) && (
+    ( operator(t->expr[0]) && operator(son->expr[0]) &&
+      operator(t->expr[0]) > operator(son->expr[0]) )
+    || ( function(t->expr) && operator(son->expr[0]) )
+    || ( t->l == son &&  operator(t->expr[0]) && operator(t->expr[0]) != 4 &&
+      operator(t->expr[0]) == operator(son->expr[0]) )
+    || ( t->r == son && operator(t->expr[0]) == 4 &&
+      operator(t->expr[0]) == operator(son->expr[0]) )
+    );
+}
+//adds brackests if neded, when converting a tree to infix notation
+void brackets_for_branch(char *res, int *poz, tree *t, tree *son)
+{
+  if( condition_for_brackets(t, son) )
+  {
+    *(res + *poz) = '('; *poz += 1;
+    *(res + *poz) = '\0';
+    *(res + *poz) = ' '; *poz += 1;
+    *(res + *poz) = '\0';
+
+    tree_to_infix(res, poz, son);
+
+    *(res + *poz) = ')'; *poz += 1;
+    *(res + *poz) = '\0';
+    *(res + *poz) = ' '; *poz += 1;
+    *(res + *poz) = '\0';
+  }
+  else
+    tree_to_infix(res, poz, son);
+}
+
+//writes a function with 2 arguments in infix notation
+void doubleArgF(char *res, int *poz, tree *t)
+{
+  strcat(res,t->expr);
+  *poz += strlen(t->expr);
+  strcat(res," ( "); *poz += 3;
+
+  if(t->r != NULL)
+    tree_to_infix(res, poz, t->r);
+
+  strcat(res,", "); *poz += 2;
+
+  if(t->l != NULL)
+    tree_to_infix(res, poz, t->l);
+  strcat(res,") "); *poz += 2;
+}
+
+//coverts a tree to a string in infix notation
+//poz points at the end of the last element + 1
+void *tree_to_infix(char *res, int *poz, tree *t)
+{
+  if(t->f == NULL)
+        *res = '\0';
+  if(!strcmp(t->expr,"log"))
+      doubleArgF(res, poz, t);
+  else
+    {
+      if(t->r != NULL)
+        brackets_for_branch(res, poz, t, t->r);
+
+      strcat(res,t->expr);
+      *poz += strlen(t->expr);
+      *(res + *poz) = ' ';
+      *poz += 1;
+      *(res + *poz) = '\0';
+
+      if(t->l != NULL)
+        brackets_for_branch(res, poz, t, t->l);
+    }
+  if(t->f == NULL)
+    *(res + *poz - 1) = '\0';
+}
+
+//deallocates a tree
+void free_tree(tree *t)
+{
+  if(t->l != NULL)
+    free_tree(t->l);
+  if(t->r != NULL)
+    free_tree(t->r);
+  free(t);
+}
+
+//puts a double number to a string, removing unnecessary '0'
+void put_number(char *exp, double d)
+{
+  char s[100] = "";
+  sprintf(s,"%f",d);
+  int i = strlen(s) - 1;
+  while(s[i] == '0')
+  {
+    s[i] = '\0';
+    i--;
+  }
+  if(s[i] == '.') s[i] = '\0';
+  strcpy(exp,s);
+}
+
+//derives x ^ c
+void derive_pow(tree *t)
+{
+  double p = atof(t->l->expr);
+  if(p == 1 || p == 0)
+  {
+    free(t->l); t->l = NULL;
+    free(t->r); t->r = NULL;
+    if(p == 1) strcpy(t->expr,"1");
+    else strcpy(t->expr,"0");
+  }
+  else
+  {
+    tree *t2 = malloc(sizeof(tree));
+    tree *t3 = malloc(sizeof(tree));
+    strcpy(t2->expr,t->expr);
+    t2->f = t; t2->l = t->l; t2->r = t->r;
+    t2->l->f = t2; t2->r->f = t2;
+    strcpy(t->expr,"*");
+    t->l = t2; t->r = t3;
+    put_number(t3->expr, p);
+    t3->f = t; t3->l = NULL; t3->r = NULL;
+    put_number(t2->l->expr, p - 1);
+  }
+}
+
+//derives a constant
+void derive_const(tree *t)
+{
+  strcpy(t->expr,"0");
+}
+
+//derives sqrt x
+void derive_sqrt(tree *t)
+{
+  strcpy(t->expr,"/");
+  tree *t1 = malloc(sizeof(tree)), *t2 = malloc(sizeof(tree));
+  tree *t3 = malloc(sizeof(tree)), *t4 = malloc(sizeof(tree));
+  strcpy(t1->expr,"1"); strcpy(t2->expr,"*"); strcpy(t3->expr,"2");
+  strcpy(t4->expr,"sqrt");
+  t->r = t1; t1->f = t; t1->l = NULL; t1->r = NULL;
+  t4->f = t2; t4->l = t->l; t4->r = NULL;
+  t->l = t2; t2->f = t; t2->l = t4; t2->r = t3;
+  t3->f = t2; t3->l = NULL; t3->r = NULL;
+}
+
+//derives c ^ x
+void derive_exponential(tree *t)
+{
+  if( strcmp(t->r->expr,"e") )
+  {
+    strcpy(t->expr,"*");
+    tree *t1 = malloc(sizeof(tree)), *t2 = malloc(sizeof(tree));
+    tree *t3 = malloc(sizeof(tree));
+    strcpy(t1->expr,"^"); strcpy(t2->expr,"ln");
+    put_number(t3->expr, atof(t->r->expr));
+    t1->f = t, t1->l = t->l; t1->r = t->r; t->r = t1;
+    t2->f = t; t2->l = t3; t2->r = NULL; t->l = t2;
+    t3->f = t2; t3->l = NULL; t3->r = NULL;
+  }
+}
+
+//derive ln x
+void derive_ln(tree *t)
+{
+  strcpy(t->expr,"/");
+  tree *t1 = malloc(sizeof(tree));
+  strcpy(t1->expr,"1");
+  t->r = t1; t1->f = t; t1->l = NULL; t1->r = NULL;
+}
+
 //---------------------------------------------------------------------------
 //testing
 
-void input()
+//tests the convertion from infix no rpn
+void test_rpn_convertor()
 {
-  char exp[1000];
-  printf("d / dx * ");
-  fgets(exp, sizeof(exp), stdin);
+  char a[50] = "3 + 4 * 2 / ( 1 - 5 ) ^ 2 ^ 3", b[50];
+  rpn_convertor(a, b);
+  assert( !strcmp(b,"3 4 2 * 1 5 - 2 3 ^ ^ / +") );
+  strcpy(a, "3 / 4 / 5 * 6"); rpn_convertor(a, b);
+  assert( !strcmp(b,"3 4 / 5 / 6 *") );
+  strcpy(a, "-3 ^ 4 * 5 - 6"); rpn_convertor(a, b);
+  assert( !strcmp(b,"-3 4 ^ 5 * 6 -") );
+  strcpy(a, "3 ^ (4 * 5 - 6)"); rpn_convertor(a, b);
+  assert( !strcmp(b,"3 4 5 * 6 - ^") );
+  strcpy(a, "sin (x + tg (x / 2) + e ^ 4 - pi ^ 2)"); rpn_convertor(a, b);
+  assert( !strcmp(b,"x x 2 / tg + e 4 ^ + pi 2 ^ - sin") );
+  strcpy(a, "cos x / 2"); rpn_convertor(a, b);
+  assert( !strcmp(b,"x cos 2 /") );
+  strcpy(a, "ln (log (2 , 3) + lg 7)"); rpn_convertor(a, b);
+  assert( !strcmp(b,"2 3 log 7 lg + ln") );
+  strcpy(a, "sqrt( x ^ 2 / 4)"); rpn_convertor(a, b);
+  assert( !strcmp(b,"x 2 ^ 4 / sqrt") );
+}
 
+//tests the convertion from tree to infix
+void test_tree_to_infix()
+{
+  char a[50] = "3 / 4 / 5 * 6", b[50], c[50];
+  int p, q;
+  rpn_convertor(a, b); p  = strlen(b);
+  tree *t = tree_parser(b, &p, NULL);
+  q = 0; tree_to_infix(c, &q , t);
+  assert( !strcmp(a,c)); free_tree(t);
+  strcpy(a, "3 + 4 * 2 / ( 1 - 5 ) ^ 2 ^ 3"); rpn_convertor(a, b);
+  p  = strlen(b); t = tree_parser(b, &p, NULL); q = 0;
+  tree_to_infix(c, &q , t); assert( !strcmp(a,c)); free_tree(t); memset(c,0,50);
+  strcpy(a, "sin ( x + tg ( x / 2 ) - e ^ -4 + pi ^ 2 )"); rpn_convertor(a, b);
+  p  = strlen(b); t = tree_parser(b, &p, NULL); q = 0;
+  tree_to_infix(c, &q , t); assert( !strcmp(a,c)); free_tree(t); memset(c,0,50);
+  strcpy(a, "log ( 3.14 , ln x * lg 14 )"); rpn_convertor(a, b);
+  p  = strlen(b); t = tree_parser(b, &p, NULL); q = 0;
+  tree_to_infix(c, &q , t); assert( !strcmp(a,c)); free_tree(t); memset(c,0,50);
+}
+
+//tests the derivate of constants and x ^ c
+void test_derivate_powconst()
+{
+  char a[50] = "x 450 ^", b[50]; int p, q;
+  p = strlen(a);
+  tree *t = tree_parser(a, &p, NULL); derive_pow(t);
+  q = 0; tree_to_infix(b, &q , t); free_tree(t);
+  assert( !strcmp(b,"450 * x ^ 449"));
+  strcpy(a,"x 2345.345 ^"), p = strlen(a);
+  t = tree_parser(a, &p, NULL); derive_pow(t);
+  q = 0; tree_to_infix(b, &q , t); free_tree(t);
+  assert( !strcmp(b,"2345.345 * x ^ 2344.345"));
+  strcpy(a,"x 0 ^"), p = strlen(a);
+  t = tree_parser(a, &p, NULL); derive_pow(t);
+  q = 0; tree_to_infix(b, &q , t); free_tree(t);
+  assert( !strcmp(b,"0"));
+  strcpy(a,"x 1 ^"), p = strlen(a);
+  t = tree_parser(a, &p, NULL); derive_pow(t);
+  q = 0; tree_to_infix(b, &q , t); free_tree(t);
+  assert( !strcmp(b,"1"));
+  strcpy(a,"2345.345"), p = strlen(a);
+  t = tree_parser(a, &p, NULL); derive_const(t);
+  q = 0; tree_to_infix(b, &q , t); free_tree(t);
+  assert( !strcmp(b,"0"));
+  strcpy(a,"1244.1243"), p = strlen(a);
+  t = tree_parser(a, &p, NULL); derive_const(t);
+  q = 0; tree_to_infix(b, &q , t); free_tree(t);
+  assert( !strcmp(b,"0"));
 }
 
 void test()
-{
-
+{ //fix minus, add basic simplifier
+  test_rpn_convertor();
+  test_tree_to_infix();
+  test_derivate_powconst();
   printf("All tests passed!\n");
 }
 
 int main()
 {
-  char exp[50] = "sin pi", res[50];
-  memset(res, 0, sizeof(res));
-  int c = rpn_convertor(exp,res);
-  printf("%s\n",res );
-//  printf("%d\n",c );
+  test();
+  char a[50] = "x -1.78 ^", b[50]; int p, q;
+  p = strlen(a);
+  tree *t = tree_parser(a, &p, NULL); derive_pow(t);
+  q = 0; tree_to_infix(b, &q , t); free_tree(t);
+  printf("%s\n",b );
   return 0;
 }

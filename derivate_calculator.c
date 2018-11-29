@@ -95,7 +95,7 @@ void variable(char *exp, char *res, int *i, int *j)
 void last(char *stack, int poz, char *l)
 {
   int k = poz - 2, i = 0;
-  while( stack[k - 1] != ' ' && k != 0)
+  while(k != 0 && stack[k - 1] != ' ')
     k--;
   while( stack[k] != ' ' )
     {
@@ -262,7 +262,7 @@ int rpn_convertor(char *exp, char *res)
 void get_elem(char *exp, int poz, char *l)
 {
   int k = poz - 1, i = 0;
-  while( exp[k - 1] != ' ' && k != 0)
+  while(k != 0 && exp[k - 1] != ' ')
     k--;
   while( k <= poz - 1 )
     {
@@ -614,6 +614,12 @@ void derive_abs(tree *t)
 //derive log (n , x)
 void derive_log(tree *t)
 {
+  if(!strcmp(t->expr,"lg"))
+  {
+    tree *t4 = malloc(sizeof(tree));
+    strcpy(t4->expr,"10");
+    t4->f = t; t4->l = NULL; t4->r = NULL; t->r = t4;
+  }
   tree *t1 = malloc(sizeof(tree)), *t2 = malloc(sizeof(tree));
   tree *t3 = malloc(sizeof(tree));
   strcpy(t->expr,"/"); strcpy(t1->expr,"1");
@@ -720,10 +726,10 @@ void test()
 int main()
 {
   test();
-  char a[50] = "1 x /", b[50]; int p, q;
+  char a[50] = "x 5 - lg", b[50]; int p, q;
   //rpn_convertor(a,b); printf("%s\n",b );
   p = strlen(a);
-  tree *t = tree_parser(a, &p, NULL); derive_oneoverx(t);
+  tree *t = tree_parser(a, &p, NULL); derive_log(t);
   q = 0; tree_to_infix(b, &q , t); free_tree(t);
   printf("%s\n",b );
   return 0;

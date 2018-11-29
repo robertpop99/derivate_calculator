@@ -27,7 +27,7 @@ list *newList(item d)
   l->def = malloc(sizeof(node));
   l->end = malloc(sizeof(node));
   l->def->cont = d;
-  l->current = NULL;
+  l->current = l->end;
   l->def->next = l->end;
   l->end->previous = l->def;
   l->def->previous = NULL;
@@ -55,23 +55,24 @@ void startF(list *l)
 
 void startB(list *l)
 {
-     l->current = l->end->previous;
+     l->current = l->end;
 }
 
 bool endF(list *l)
 {
-
+  if(l->def->next == l->end) return true;
   return (l->current == l->end);
 }
 
 bool endB(list *l)
 {
-
-  return (l->current == l->def);
+  if(l->def->next == l->end) return true;
+  return (l->current == l->def->next);
 }
 
 bool nextF(list *l)
 {
+  if(l->def->next == l->end) return false;
   if(l->current == l->end) return false;
   l->current = l->current->next;
   return true;
@@ -79,7 +80,8 @@ bool nextF(list *l)
 
 bool nextB(list *l)
 {
-  if(l->current == l->def) return false;
+  if(l->def->next == l->end) return false;
+  if(l->current == l->def->next) return false;
   l->current = l->current->previous;
   return true;
 }
@@ -89,94 +91,76 @@ void insertF(list *l, item x)
     node *n = malloc(sizeof(node));
     n->cont = x;
     if(l->def->next == l->end)
-    {
-        l->def->next = n;
-        l->end->previous = n;
-        n->next = l->end;
-        n->previous = l->def;
-        l->current = n;
-    }
-    else
-    {
-      n->next = l->current;
-      n->previous = l->current->previous;
-      l->current->previous->next = n;
-      l->current->previous = n;
-    }
+        l->current = l->end;
+
+    n->next = l->current;
+    n->previous = l->current->previous;
+    l->current->previous->next = n;
+    l->current->previous = n;
 }
 
 void insertB(list *l, item x)
 {
-  node *n = malloc(sizeof(node));
-  n->cont = x;
-  if(l->def->next == l->end)
-  {
-    l->def->next = n;
-    l->end->previous = n;
-    n->next = l->end;
-    n->previous = l->def;
-    l->current = n;
-  }
-  else
-  {
-    n->previous = l->current;
-    n->next = l->current->next;
-    l->current->next->previous = n;
-    l->current->next = n;
-  }
+  insertF(l,x);
+  l->current = l->current->previous;
 }
 
 item getF(list *l)
 {
   if(l->current == l->end) return l->def->cont;
+  if(l->current == l->def) return l->def->cont;
   return l->current->cont;
 }
 
 item getB(list *l)
 {
-  if(l->current == l->def) return l->def->cont;
-  return l->current->cont;
+  l->current = l->current->previous;
+  item x = getF(l);
+  l->current = l->current->next;
+  return x;
 }
 
 bool setF(list *l, item x)
 {
   if(l->current == l->end) return false;
+  if(l->current == l->def) return false;
   l->current->cont = x;
   return true;
 }
 
 bool setB(list *l, item x)
 {
-  if(l->current == l->def) return false;
-  l->current->cont = x;
-  return true;
+  l->current = l->current->previous;
+  bool b = setF(l,x);
+  l->current = l->current->next;
+  return b;
 }
 
 bool deleteF(list *l)
 {
   if(l->current == l->end) return false;
+  if(l->current == l->def) return false;
   l->current->previous->next = l->current->next;
   l->current->next->previous = l->current->previous;
-  free(l->current);
+  node *n = l->current;
+  l->current = l->current->next;
+  free(n);
   return true;
 }
 
 bool deleteB(list *l)
 {
-  if(l->current == l->def) return false;
-  l->current->previous->next = l->current->next;
-  l->current->next->previous = l->current->previous;
-  free(l->current);
-  return true;
+  l->current = l->current->previous;
+  bool b = deleteF(l);
+  if(!b) l->current = l->current->next;
+  return b;
 }
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // Testing for the lists module. Strings are used to describe lists. The strings
 // "|37", "3|7", "37|" represent a list of two items, with the current position
 // at the start, middle or end.
-//#ifdef test_lists
-
-#include <assert.h>
+#ifdef test_lists
 
 // Convert a string description to a list.
 static list *toList(char *pic) {
@@ -195,7 +179,7 @@ static list *toList(char *pic) {
 // Convert a list to a string description.
 static void toString(list *l, char s[]) {
     int pos = 0;
-    while (! endB(l)) { pos++; nextB(l);}
+    while (! endB(l)) { pos++; nextB(l); }
     int i = 0;
     while (! endF(l)) {
         if (i == pos) s[i++] = '|';
@@ -210,6 +194,8 @@ static void toString(list *l, char s[]) {
 // The second and third arguments describes the list before and after the call.
 // The fourth, fifth and sixth arguments are an item to pass as an argument, an
 // item to expect as a result, and a boolean to expect as a result, if any.
+#include <assert.h>
+
 static bool check(char *op, char *lb, char *la, item x, item y, bool b) {
     bool r = true;
     item z = 0;
@@ -232,7 +218,7 @@ static bool check(char *op, char *lb, char *la, item x, item y, bool b) {
     if (r != b || z != y) return false;
     char s[100];
     toString(l, s);
-    freeList(l); printf("%s\n",s );
+    freeList(l);
     return strcmp(s, la) == 0;
 }
 
@@ -348,4 +334,4 @@ int main() {
     return 0;
 }
 
-//#endif
+#endif

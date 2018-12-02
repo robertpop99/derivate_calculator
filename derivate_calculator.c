@@ -193,6 +193,7 @@ void value_case(char *exp, char *res, int *i, int *j)
 int rbracket_case(char *exp, char *res, char*stack, int *i, int *j, int *poz)
 {
   char l[50];
+  if(*poz == 0) return -1;
   last(stack, *poz, l);
   while(l[0] != '(')
   {
@@ -304,11 +305,13 @@ void tree_to_infix(char *, int *, tree *);
 
 //checks if conditions are met for puting brackets
 int condition_for_brackets(tree *t, tree *son)
-{//might need changes
+{
   if( isdigit(son->expr[1]) ) return 0;
   if( son->expr[1] == 'x') return 0;
   if(t->expr[0] == '*' && son->expr[0] == '*') return 0;
   if(t->expr[0] == '+' && son->expr[0] == '+') return 0;
+  if(t->expr[0] == '*' && son->expr[0] == '/') return 0;
+  if(t->expr[0] == '+' && son->expr[0] == '-') return 0;
   if(operator(t->expr[0]) && operator(son->expr[0]) &&
      operator(t->expr[0]) > operator(son->expr[0])) return 1;
   if(function(t->expr) && operator(son->expr[0])) return 1;
@@ -633,10 +636,11 @@ void derive_log(tree *t)
   t->l = t1; t->r = t2;
 }
 
-//derive 1 / x
-void derive_oneoverx(tree *t)
+//derive n / x
+void derive_noverx(tree *t)
 {
-  strcpy(t->l->expr,"-1");
+  char a[100] = "-";
+  strcpy(t->l->expr,strcat(a,t->l->expr));
   tree *t1 = malloc(sizeof(tree)), *t2 = malloc(sizeof(tree));
   strcpy(t1->expr,"^"); strcpy(t2->expr,"2");
   t1->f = t; t1->r = t2; t1->l = t->r; t->r = t1;
@@ -758,15 +762,27 @@ void derive_times(tree *t)
   derive(t1->l); derive(t2->r);
 }
 
+//derive n / f
+void divide_composition(tree *t)
+{
+  int r = exp_type(t->r);
+  if(r == 0) derive_num_tree(t);
+  else if(r == 1) derive_noverx(t);
+  else
+  {
+    tree *f = tree_copy(t);
+    strcpy(t->expr,"*");
+    t->l = f; f->f = t;
+    derive_noverx(f); derive(t->r);
+  }
+}
+
 //derive f / g
 void derive_divide(tree *t)
 {
   int l = exp_type(t->l), r = exp_type(t->r);
-  if(l == 0 && r == 0){
-    derive_num_tree(t); return;}
-  // if(l == 0){
-  //   if(r == 1) derive_x(t->r);
-  //   else derive(t->r); return;}
+  if(l == 0){
+     divide_composition(t); return;}
   if(r == 0){
     if(l == 1) derive_x(t->l);
     else derive(t->l); return;}
@@ -1119,6 +1135,68 @@ void simplify(tree **t)
 {
     simplify_neutral(t);
 }
+
+//finds the position of the next element
+int find_next(char *exp, int i)
+{
+  if( isdigit(*(exp + i)) )
+    while( isdigit(*(exp + i)) || *(exp + i) == '.' ) i++;
+  else if( isalpha(*(exp + i)) )
+    while( isalpha(*(exp + i)) ) i++;
+  return i;
+}
+
+//checksfor problems in the input
+//last = 0 : numers,x,e, 1 : operator, 2 : function
+int check_spelling(char *exp){
+  int last = -1, i = 0;
+  while(*(exp + i) != '\0'){
+    if(*(exp + i) == '-')
+      last = 1;
+    else if(operator(*(exp + i))){
+      if(last != 0) return 0;
+      else last = 1;}
+    else if(isdigit(*(exp+i)) || *(exp+i) == 'x' || is_value(exp,i)){
+      if(last == 0) return 0;
+      else last = 0;
+      i = find_next(exp,i) - 1;}
+    else if(is_function(exp,i)){
+      if(last == 0) return 0;
+      else last = 2;
+      i = find_next(exp,i) - 1;}
+    else if(*(exp + i) == ','){
+      if(last != 0) return 0;
+      else last = 1;}
+    else if(*(exp + i) != ' ' && *(exp + i) != ')' && *(exp + i) != '(')
+      return 0;
+    i++;
+  }
+  if(last != 0) return 0;
+  else return 1;
+}
+
+//runs the program
+void run()
+{
+  char inp[1000], exp[1000], res[1000];
+  int p, q;
+  printf("Example of input : 67.8 + e * sin ( x + pi ^ 2 )\n" );
+  printf("Your expresion: ");
+  fgets(inp,sizeof(inp),stdin);
+  inp[strcspn(inp, "\r\n")] = '\0';
+  while(check_spelling(inp) == 0 || rpn_convertor(inp,exp) == -1)
+  {
+    printf("Spelling error, try again\n");
+    printf("Your expresion: ");
+    fgets(inp,sizeof(inp),stdin);
+    inp[strcspn(inp, "\r\n")] = '\0';
+  }
+  p = strlen(exp);
+  tree *t = tree_parser(exp, &p, NULL); derive(t); simplify(&t);
+  q = 0; tree_to_infix(res, &q , t); free_tree(t);
+  printf("The derivate is: %s\n",res);
+}
+
 //---------------------------------------------------------------------------
 //testing
 
@@ -1197,12 +1275,13 @@ void test_derivate_powconst()
 //derives an expresion and checks if it is the same as the expected result
 int test_deriver(char *exp, char *res)
 {
+    assert(check_spelling(exp) && check_spelling(res));
     char a[100], b[100];
     int p, q;
     rpn_convertor(exp,a);
     p = strlen(a);
     tree *t = tree_parser(a, &p, NULL); derive(t); simplify(&t);
-    q = 0; tree_to_infix(b, &q , t); free_tree(t);printf("%s\n",b );
+    q = 0; tree_to_infix(b, &q , t); free_tree(t);
     return (!strcmp(b,res));
 }
 
@@ -1285,11 +1364,102 @@ void test_arctg_arcctg()
 //tets derive log and derive ln and derive lg
 void test_log()
 {
+  char a[100], b[100];
+  strcpy(a,"ln x"), strcpy(b,"1 / x");
+  assert(test_deriver(a,b));
+  strcpy(a,"ln x ^ 2"), strcpy(b,"2 * ln x * 1 / x");
+  assert(test_deriver(a,b));
+  strcpy(a,"log ( 5 , x )"); strcpy(b,"1 / ( x * ln 5 )");
+  assert(test_deriver(a,b));
+  strcpy(a,"log ( 2 , x ^ 2 )"); strcpy(b,"1 / ( x ^ 2 * ln 2 ) * 2 * x");
+  assert(test_deriver(a,b));
+  strcpy(a,"lg x"); strcpy(b,"1 / ( x * ln 10 )");
+  assert(test_deriver(a,b));
+  strcpy(a,"lg ( x + 2 )"); strcpy(b,"1 / ( ( x + 2 ) * ln 10 )");
+  assert(test_deriver(a,b));
+}
 
+//tests derive sqrt
+void test_sqrt()
+{
+  char a[100], b[100];
+  strcpy(a,"sqrt x"), strcpy(b,"1 / ( 2 * sqrt x )");
+  assert(test_deriver(a,b));
+  strcpy(a,"sqrt ( x ^ 2 )"), strcpy(b,"1 / ( 2 * sqrt ( x ^ 2 ) ) * 2 * x");
+  assert(test_deriver(a,b));
+  strcpy(a,"sqrt sin x"); strcpy(b,"1 / ( 2 * sqrt sin x ) * cos x");
+  assert(test_deriver(a,b));
+}
+
+//tests derive abs
+void test_abs()
+{
+  char a[100], b[100];
+  strcpy(a,"abs x"), strcpy(b,"x / abs x");
+  assert(test_deriver(a,b));
+  strcpy(a,"abs ( x ^ 2 )"), strcpy(b,"x ^ 2 / abs ( x ^ 2 ) * 2 * x");
+  assert(test_deriver(a,b));
+  strcpy(a,"abs sin x"); strcpy(b,"sin x / abs sin x * cos x");
+  assert(test_deriver(a,b));
+}
+
+//tests n ^ f and f ^ g
+void test_pow()
+{
+  char a[100], b[100];
+  strcpy(a,"15 ^ x"), strcpy(b,"15 ^ x * ln 15");
+  assert(test_deriver(a,b));
+  strcpy(a,"15 ^ x ^ 2"), strcpy(b,"15 ^ x ^ 2 * ln 15 * 2 * x");
+  assert(test_deriver(a,b));
+  strcpy(a,"x ^ x"); strcpy(b,"x * x ^ ( x - 1 ) + x ^ x * ln x");
+  assert(test_deriver(a,b));
+  strcpy(a,"sin x ^ x");
+  strcpy(b,"x * sin x ^ ( x - 1 ) * cos x + sin x ^ x * ln sin x");
+  assert(test_deriver(a,b));
+  strcpy(a,"x ^ ln x");
+  strcpy(b,"ln x * x ^ ( ln x - 1 ) + x ^ ln x * ln x * 1 / x");
+  assert(test_deriver(a,b));
+  strcpy(a,"sin x ^ x ^ 2");
+  strcpy(b,"x ^ 2 * sin x ^ ( x ^ 2 - 1 ) * cos x");
+  strcat(b," + sin x ^ x ^ 2 * ln sin x * 2 * x");
+  assert(test_deriver(a,b));
+  strcpy(a,"1 / x"), strcpy(b,"-1 / x ^ 2");
+  assert(test_deriver(a,b));
+  strcpy(a,"6.65 / sin x"), strcpy(b,"-6.65 / sin x ^ 2 * cos x");
+  assert(test_deriver(a,b));
+  strcpy(a,"sin x / 5"), strcpy(b,"cos x / 5");
+  assert(test_deriver(a,b));
+}
+
+//tests check_spelling
+void test_spelling()
+{
+  char a[100];
+  strcpy(a,"x + sin");  assert(!check_spelling(a));
+  strcpy(a,"sin x -"); assert(!check_spelling(a));
+  strcpy(a,"log (5 +,x)"); assert(!check_spelling(a));
+  strcpy(a,"sinc 5"); assert(!check_spelling(a));
+  strcpy(a,"%x + 6"); assert(!check_spelling(a));
+  strcpy(a,"x7"); assert(!check_spelling(a));
+  strcpy(a,"6 log (5,sin x)"); assert(!check_spelling(a));
+  strcpy(a,"* x"); assert(!check_spelling(a));
+  strcpy(a,"7 89.6"); assert(!check_spelling(a));
+  strcpy(a,"x pi"); assert(!check_spelling(a));
+  strcpy(a,"*"); assert(!check_spelling(a));
+  strcpy(a,"+ +"); assert(!check_spelling(a));
+  strcpy(a,"sin sin"); assert(!check_spelling(a));
+  strcpy(a,"x ^ sin x&"); assert(!check_spelling(a));
+  strcpy(a,"&#{&}"); assert(!check_spelling(a));
+  strcpy(a,"dfgfdh"); assert(!check_spelling(a));
+  strcpy(a,"-sin x + cos"); assert(!check_spelling(a));
+  strcpy(a,"- + 5"); assert(!check_spelling(a));
+  strcpy(a,"6 + -5 -"); assert(!check_spelling(a));
+  strcpy(a,""); assert(!check_spelling(a));
+  strcpy(a,"pi sin x"); assert(!check_spelling(a));
 }
 
 void test()
-{ //add basic simplifier
+{
   test_rpn_convertor();
   test_tree_to_infix();
   test_derivate_powconst();
@@ -1299,18 +1469,16 @@ void test()
   test_arcsin_arccos();
   test_arctg_arcctg();
   test_log();
+  test_sqrt();
+  test_abs();
+  test_pow();
+  test_spelling();
   printf("All tests passed!\n");
 }
 
-int main()
+int main(int n, char *args[n])
 {
-  test();
-//   char a[50], b[50], c[50] = "6 * ( 7 * 3 + 5 )"; int p, q;
-//   rpn_convertor(c,a);
-//   p = strlen(a);
-//   tree *t = tree_parser(a, &p, NULL); //derive(t);
-// //  simplify(&t);
-//   q = 0; tree_to_infix(b, &q , t); free_tree(t);
-//   printf("%s\n",b );
+  if(n == 2 && strcmp(args[1],"test") == 0) test();
+  else run();
   return 0;
 }
